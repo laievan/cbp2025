@@ -144,6 +144,20 @@ void notify_instr_execute_resolve(uint64_t seq_no, uint8_t piece, uint64_t pc, c
 // For the sample predictor implementation, we do not leverage commit information
 void notify_instr_commit(uint64_t seq_no, uint8_t piece, uint64_t pc, const bool pred_dir, const ExecuteInfo& _exec_info, const uint64_t commit_cycle)
 {
+    const bool is_branch = is_br(_exec_info.dec_info.insn_class);
+    if (is_branch)
+    {
+        if (is_cond_br(_exec_info.dec_info.insn_class))
+        {
+            const bool _resolve_dir = _exec_info.taken.value();
+            const uint64_t _next_pc = _exec_info.next_pc;
+            cbp2016_tage_sc_l.update_at_commit(seq_no, piece, pc, _resolve_dir, pred_dir, _next_pc);
+        }
+        else
+        {
+          assert(pred_dir);
+        }
+    }
 }
 
 //

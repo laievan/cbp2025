@@ -895,7 +895,7 @@ class CBP2016_TAGE_SC_L
 
 
         //  TAGE PREDICTION: same code at fetch or retire time but the index and tags must recomputed
-        void Tagepred (UINT64 PC, cbp_hist_t& hist_to_use)
+        void Tagepred (UINT64 PC, const cbp_hist_t& hist_to_use)
         {
             HitBank = 0;
             AltBank = 0;
@@ -1031,7 +1031,7 @@ class CBP2016_TAGE_SC_L
             return pred_taken;
         }
 
-        bool predict_using_given_hist (uint64_t seq_no, uint8_t piece, UINT64 PC, cbp_hist_t& hist_to_use, const bool pred_time_predict)
+        bool predict_using_given_hist (uint64_t seq_no, uint8_t piece, UINT64 PC, const cbp_hist_t& hist_to_use, const bool pred_time_predict)
         {
             // computes the TAGE table addresses and the partial tags
             Tagepred (PC, hist_to_use);
@@ -1225,13 +1225,34 @@ class CBP2016_TAGE_SC_L
 
         // PREDICTOR UPDATE
 
+        // update at commit: loop predictor needs to be updated in order
+        void update_at_commit (uint64_t seq_no, uint8_t piece, UINT64 PC, bool resolveDir, bool predDir, UINT64 nextPC)
+        {
+            const auto pred_hist_key = get_unique_inst_id(seq_no, piece);
+            const auto& pred_time_history = pred_time_histories.at(pred_hist_key);
+            const bool pred_taken = predict_using_given_hist(seq_no, piece, PC, pred_time_history, false/*pred_time_predict*/);
+#ifdef SC
+#ifdef LOOPPREDICTOR
+            if (LVALID)
+            {
+                if (pred_taken != predloop)
+                    ctrupdate (WITHLOOP, (predloop == resolveDir), 7);
+            }
+            loopupdate (PC, resolveDir, (pred_taken != resolveDir), pred_time_history);
+#endif
+#endif
+            // remove checkpointed hist
+            pred_time_histories.erase(pred_hist_key);
+        }
+
+
         //void update (UINT64 PC, int brtype, bool resolveDir, bool predDir, UINT64 nextPC)
         void update (uint64_t seq_no, uint8_t piece, UINT64 PC, bool resolveDir, bool predDir, UINT64 nextPC)
         {
             const auto pred_hist_key = get_unique_inst_id(seq_no, piece);
             //if (PC == 0x71dc50) { printf("%lx updating\n", pred_hist_key); } // for fp_9
             //if (PC == 0xfffff0d9bfe8) { printf("%lx updating\n", pred_hist_key); } // for fp_4
-            auto& pred_time_history = pred_time_histories.at(pred_hist_key);
+            const auto& pred_time_history = pred_time_histories.at(pred_hist_key);
             const bool pred_taken = predict_using_given_hist(seq_no, piece, PC, pred_time_history, false/*pred_time_predict*/);
             
             // assert(pred_time_history.LHIT == LHIT);
@@ -1247,23 +1268,12 @@ class CBP2016_TAGE_SC_L
             } 
             */
            
-            // remove checkpointed hist
             update(PC, resolveDir, pred_taken, nextPC, pred_time_history);
-            pred_time_histories.erase(pred_hist_key);
         }
 
         void update (UINT64 PC, bool resolveDir, bool pred_taken, UINT64 nextPC, const cbp_hist_t& hist_to_use)
         {
 #ifdef SC
-#ifdef LOOPPREDICTOR
-            if (LVALID)
-            {
-                if (pred_taken != predloop)
-                    ctrupdate (WITHLOOP, (predloop == resolveDir), 7);
-            }
-            loopupdate (PC, resolveDir, (pred_taken != resolveDir), hist_to_use);
-#endif
-
             bool SCPRED = (LSUM >= 0);
             if (pred_inter != SCPRED)
             {
@@ -1625,7 +1635,7 @@ class CBP2016_TAGE_SC_L
         //skewed associative 4-way
         //At fetch time: speculative
 #define CONFLOOP 15
-        bool getloop (UINT64 PC, cbp_hist_t& hist_to_use)
+        bool getloop (UINT64 PC, const cbp_hist_t& hist_to_use)
         {
             LHIT = -1;
 
@@ -1759,7 +1769,6 @@ class CBP2016_TAGE_SC_L
                     }
                     ltable[index].CurrentIter = 0;
                 }
-                if (ALLOC) { ltable[index].SpecCurrentIter = ltable[index].CurrentIter; }
             }
             else if (ALLOC)
 
