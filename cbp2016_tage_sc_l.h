@@ -209,7 +209,7 @@ int SizeTable[NHIST + 1];
 #define MAXHIST 3000
 
 
-#define LOGG 10         /* logsize of the  banks in the  tagged TAGE tables */
+#define LOGG 11         /* logsize of the  banks in the  tagged TAGE tables */
 #define TBITS 8         //minimum width of the tags  (low history lengths), +4 for high history lengths
 
 
@@ -219,7 +219,7 @@ bool NOSKIP[NHIST + 1];     // to manage the associativity for different history
 
 #define NNN 1           // number of extra entries allocated on a TAGE misprediction (1+NNN)
 #define HYSTSHIFT 2     // bimodal hysteresis shared by 4 entries
-#define LOGB 13         // log of number of entries in bimodal predictor
+#define LOGB 14         // log of number of entries in bimodal predictor
 
 
 #define PHISTWIDTH 27       // width of the path history used in TAGE
@@ -250,16 +250,18 @@ class lentry            //loop predictor entry
         uint16_t NbIter;        //10 bits
         uint8_t confid;     // 4bits
         uint16_t CurrentIter;       // 10 bits
+        uint16_t SpecCurrentIter; // 10 bits
 
         uint16_t TAG;           // 10 bits
         uint8_t age;            // 4 bits
         bool dir;           // 1 bit
 
-        //39 bits per entry    
+        //49 bits per entry    
         lentry ()
         {
             confid = 0;
             CurrentIter = 0;
+            SpecCurrentIter = 0;
             NbIter = 0;
             TAG = 0;
             age = 0;
@@ -327,6 +329,18 @@ struct cbp_hist_t
 
       std::array<uint64_t, 256> IMHIST;
       uint64_t IMLIcount;      // use to monitor the iteration number
+
+      // State set in predict and used in update
+      // Begin LOOPPREDICTOR State
+      bool predloop;  // loop predictor prediction
+      int LIB;
+      int LI;
+      int LHIT;           //hitting way in the loop predictor
+      int LTAG;           //tag on the loop predictor
+      bool LVALID;        // validity of the loop predictor prediction
+      // End LOOPPREDICTOR State
+      bool tage_pred;
+      int LSUM;
 };
 
 
@@ -879,7 +893,7 @@ class CBP2016_TAGE_SC_L
 
 
         //  TAGE PREDICTION: same code at fetch or retire time but the index and tags must recomputed
-        void Tagepred (UINT64 PC, const cbp_hist_t& hist_to_use)
+        void Tagepred (UINT64 PC, cbp_hist_t& hist_to_use)
         {
             HitBank = 0;
             AltBank = 0;
@@ -959,12 +973,13 @@ class CBP2016_TAGE_SC_L
                 //USE_ALT_ON_NA is positive  use the alternate prediction
 
                 bool Huse_alt_on_na = (use_alt_on_na[INDUSEALT] >= 0);
-                if ((!Huse_alt_on_na)
-                        || (abs (2 * gtable[HitBank][GI[HitBank]].ctr + 1) > 1))
+                if ((!Huse_alt_on_na) 
+                        || (abs (2 * gtable[HitBank][GI[HitBank]].ctr + 1) > 1)) {
                     tage_pred = LongestMatchPred;
-                else
+                }
+                else {
                     tage_pred = alttaken;
-
+                }
                 HighConf =
                     (abs (2 * gtable[HitBank][GI[HitBank]].ctr + 1) >=
                      (1 << CWIDTH) - 1);
@@ -1007,12 +1022,14 @@ class CBP2016_TAGE_SC_L
         bool predict (uint64_t seq_no, uint8_t piece, UINT64 PC)
         {
             // checkpoint current hist
+            //if (PC == 0x71dc50) { printf("%lx predicting...\n", get_unique_inst_id(seq_no, piece)); } // for fp_9
+            //if (PC == 0xfffff0d9bfe8) { printf("%lx predicting...\n", get_unique_inst_id(seq_no, piece)); } // for fp_4
             pred_time_histories.emplace(get_unique_inst_id(seq_no, piece), active_hist);
             const bool pred_taken = predict_using_given_hist(seq_no, piece, PC, active_hist, true/*pred_time_predict*/);
             return pred_taken;
         }
 
-        bool predict_using_given_hist (uint64_t seq_no, uint8_t piece, UINT64 PC, const cbp_hist_t& hist_to_use, const bool pred_time_predict)
+        bool predict_using_given_hist (uint64_t seq_no, uint8_t piece, UINT64 PC, cbp_hist_t& hist_to_use, const bool pred_time_predict)
         {
             // computes the TAGE table addresses and the partial tags
             Tagepred (PC, hist_to_use);
@@ -1210,13 +1227,24 @@ class CBP2016_TAGE_SC_L
         void update (uint64_t seq_no, uint8_t piece, UINT64 PC, bool resolveDir, bool predDir, UINT64 nextPC)
         {
             const auto pred_hist_key = get_unique_inst_id(seq_no, piece);
-            const auto& pred_time_history = pred_time_histories.at(pred_hist_key);
+            //if (PC == 0x71dc50) { printf("%lx updating\n", pred_hist_key); } // for fp_9
+            //if (PC == 0xfffff0d9bfe8) { printf("%lx updating\n", pred_hist_key); } // for fp_4
+            auto& pred_time_history = pred_time_histories.at(pred_hist_key);
             const bool pred_taken = predict_using_given_hist(seq_no, piece, PC, pred_time_history, false/*pred_time_predict*/);
-            //if(pred_taken != predDir)
-            //{
-            //    std::cout<<"id:"<<seq_no<<" PC:0x"<<std::hex<<PC<<std::dec<<" resolveDir:"<<resolveDir<<" pred_dir_at_pred:"<<predDir<<" pred_dir_at_update:"<<pred_taken<<std::endl;
-            //    assert(false);
-            //} 
+            
+            // assert(pred_time_history.LHIT == LHIT);
+            // assert(pred_time_history.LVALID == LVALID);
+            if (pred_time_history.predloop != predloop && PC == 0x71dc50) { printf("\nCONFLICT\n"); assert(false); }
+            
+            
+            /*
+            if(pred_taken != predDir)
+            {
+                std::cout<<"id:"<<seq_no<<" PC:0x"<<std::hex<<PC<<std::dec<<" resolveDir:"<<resolveDir<<" pred_dir_at_pred:"<<predDir<<" pred_dir_at_update:"<<pred_taken<<std::endl;
+                if (PC == 0x71dc50) { assert(false); }
+            } 
+            */
+           
             // remove checkpointed hist
             update(PC, resolveDir, pred_taken, nextPC, pred_time_history);
             pred_time_histories.erase(pred_hist_key);
@@ -1595,7 +1623,7 @@ class CBP2016_TAGE_SC_L
         //skewed associative 4-way
         //At fetch time: speculative
 #define CONFLOOP 15
-        bool getloop (UINT64 PC, const cbp_hist_t& hist_to_use)
+        bool getloop (UINT64 PC, cbp_hist_t& hist_to_use)
         {
             LHIT = -1;
 
@@ -1612,38 +1640,72 @@ class CBP2016_TAGE_SC_L
                 if (ltable[index].TAG == LTAG)
                 {
                     LHIT = i;
+                    hist_to_use.LHIT = LHIT;
                     LVALID = ((ltable[index].confid == CONFLOOP)
                             || (ltable[index].confid * ltable[index].NbIter > 128));
+                    hist_to_use.LVALID = LVALID;
 
 
-                    if (ltable[index].CurrentIter + 1 == ltable[index].NbIter)
+                    if (ltable[index].SpecCurrentIter + 1 == ltable[index].NbIter) {
+                        hist_to_use.predloop = (!(ltable[index].dir));
                         return (!(ltable[index].dir));
+                    }
+                    hist_to_use.predloop = ((ltable[index].dir));
                     return ((ltable[index].dir));
 
                 }
             }
 
             LVALID = false;
+            hist_to_use.LVALID = false;
+            hist_to_use.predloop = (false);
             return (false);
         }
 
+        // SPECULATIVE LOOP UPDATE
+        void specloopupdate (UINT64 PC)
+        {
+            LHIT = -1;
 
+            LI = lindex (PC);
+            LIB = ((PC >> (LOGL - 2)) & ((1 << (LOGL - 2)) - 1));
+            LTAG = (PC >> (LOGL - 2)) & ((1 << 2 * LOOPTAG) - 1);
+            LTAG ^= (LTAG >> LOOPTAG);
+            LTAG = (LTAG & ((1 << LOOPTAG) - 1));
+
+            for (int i = 0; i < 4; i++)
+            {
+                int index = (LI ^ ((LIB >> i) << 2)) + i;
+                if (ltable[index].TAG == LTAG)
+                {
+                  if (ltable[index].NbIter != 0)
+                  {
+                      if (ltable[index].SpecCurrentIter <= 0x3ff) { ltable[index].SpecCurrentIter++; }
+                      if (ltable[index].SpecCurrentIter >= ltable[index].NbIter) { ltable[index].SpecCurrentIter = 0; }
+                  }
+                }
+            }
+        }
 
         void loopupdate (UINT64 PC, bool Taken, bool ALLOC, const cbp_hist_t& hist_to_use)
         {
             if (LHIT >= 0)
             {
                 int index = (LI ^ ((LIB >> LHIT) << 2)) + LHIT;
+                // if (PC == 0x71dc50) { printf("H"); }
                 //already a hit 
                 if (LVALID)
                 {
+
                     if (Taken != predloop)
                     {
+                        if (PC == 0x71dc50) { printf("\nDEALLOCATING\n"); }
                         // free the entry
                         ltable[index].NbIter = 0;
                         ltable[index].age = 0;
                         ltable[index].confid = 0;
                         ltable[index].CurrentIter = 0;
+                        ltable[index].SpecCurrentIter = 0;
                         return;
 
                     }
@@ -1684,6 +1746,7 @@ class CBP2016_TAGE_SC_L
                             // first complete nest;
                             ltable[index].confid = 0;
                             ltable[index].NbIter = ltable[index].CurrentIter;
+                            ltable[index].SpecCurrentIter = 0;
                         }
                         else
                         {
@@ -1694,7 +1757,7 @@ class CBP2016_TAGE_SC_L
                     }
                     ltable[index].CurrentIter = 0;
                 }
-
+                if (ALLOC) { ltable[index].SpecCurrentIter = ltable[index].CurrentIter; }
             }
             else if (ALLOC)
 
@@ -1708,6 +1771,7 @@ class CBP2016_TAGE_SC_L
                         int index = (LI ^ ((LIB >> loop_hit_way_loc) << 2)) + loop_hit_way_loc;
                         if (ltable[index].age == 0)
                         {
+                            if (PC == 0x71dc50) { printf("allocating into bank %d, index %d\n", i, index); }
                             ltable[index].dir = !Taken;
                             // most of mispredictions are on last iterations
                             ltable[index].TAG = LTAG;
@@ -1715,6 +1779,7 @@ class CBP2016_TAGE_SC_L
                             ltable[index].age = 7;
                             ltable[index].confid = 0;
                             ltable[index].CurrentIter = 0;
+                            ltable[index].SpecCurrentIter = 0;
                             break;
 
                         }
