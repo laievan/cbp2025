@@ -209,7 +209,7 @@ int SizeTable[NHIST + 1];
 #define MAXHIST 3000
 
 
-#define LOGG 11         /* logsize of the  banks in the  tagged TAGE tables */
+#define LOGG 10         /* logsize of the  banks in the  tagged TAGE tables */
 #define TBITS 8         //minimum width of the tags  (low history lengths), +4 for high history lengths
 
 
@@ -219,7 +219,7 @@ bool NOSKIP[NHIST + 1];     // to manage the associativity for different history
 
 #define NNN 1           // number of extra entries allocated on a TAGE misprediction (1+NNN)
 #define HYSTSHIFT 2     // bimodal hysteresis shared by 4 entries
-#define LOGB 14         // log of number of entries in bimodal predictor
+#define LOGB 13         // log of number of entries in bimodal predictor
 
 
 #define PHISTWIDTH 27       // width of the path history used in TAGE
@@ -329,7 +329,8 @@ struct cbp_hist_t
 
       std::array<uint64_t, 256> IMHIST;
       uint64_t IMLIcount;      // use to monitor the iteration number
-
+      
+      /* THESE ARE UNUSED RIGHT NOW - COULD USE predloop especially for perf? i.e. anything used as a kill switch should be actual pred at pred time not pred at update time
       // State set in predict and used in update
       // Begin LOOPPREDICTOR State
       bool predloop;  // loop predictor prediction
@@ -341,6 +342,7 @@ struct cbp_hist_t
       // End LOOPPREDICTOR State
       bool tage_pred;
       int LSUM;
+      */
 };
 
 
@@ -1234,7 +1236,7 @@ class CBP2016_TAGE_SC_L
             
             // assert(pred_time_history.LHIT == LHIT);
             // assert(pred_time_history.LVALID == LVALID);
-            if (pred_time_history.predloop != predloop && PC == 0x71dc50) { printf("\nCONFLICT\n"); assert(false); }
+            //if (pred_time_history.predloop != predloop && PC == 0x71dc50) { printf("\nCONFLICT\n"); assert(false); }
             
             
             /*
@@ -1640,25 +1642,25 @@ class CBP2016_TAGE_SC_L
                 if (ltable[index].TAG == LTAG)
                 {
                     LHIT = i;
-                    hist_to_use.LHIT = LHIT;
+                    //hist_to_use.LHIT = LHIT;
                     LVALID = ((ltable[index].confid == CONFLOOP)
                             || (ltable[index].confid * ltable[index].NbIter > 128));
-                    hist_to_use.LVALID = LVALID;
+                    //hist_to_use.LVALID = LVALID;
 
 
                     if (ltable[index].SpecCurrentIter + 1 == ltable[index].NbIter) {
-                        hist_to_use.predloop = (!(ltable[index].dir));
+                        //hist_to_use.predloop = (!(ltable[index].dir));
                         return (!(ltable[index].dir));
                     }
-                    hist_to_use.predloop = ((ltable[index].dir));
+                    //hist_to_use.predloop = ((ltable[index].dir));
                     return ((ltable[index].dir));
 
                 }
             }
 
             LVALID = false;
-            hist_to_use.LVALID = false;
-            hist_to_use.predloop = (false);
+            //hist_to_use.LVALID = false;
+            //hist_to_use.predloop = (false);
             return (false);
         }
 
@@ -1699,7 +1701,7 @@ class CBP2016_TAGE_SC_L
 
                     if (Taken != predloop)
                     {
-                        if (PC == 0x71dc50) { printf("\nDEALLOCATING\n"); }
+                        //if (PC == 0x71dc50) { printf("\nDEALLOCATING\n"); }
                         // free the entry
                         ltable[index].NbIter = 0;
                         ltable[index].age = 0;
@@ -1771,7 +1773,7 @@ class CBP2016_TAGE_SC_L
                         int index = (LI ^ ((LIB >> loop_hit_way_loc) << 2)) + loop_hit_way_loc;
                         if (ltable[index].age == 0)
                         {
-                            if (PC == 0x71dc50) { printf("allocating into bank %d, index %d\n", i, index); }
+                            //if (PC == 0x71dc50) { printf("allocating into bank %d, index %d\n", i, index); }
                             ltable[index].dir = !Taken;
                             // most of mispredictions are on last iterations
                             ltable[index].TAG = LTAG;
