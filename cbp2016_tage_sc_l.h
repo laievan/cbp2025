@@ -330,6 +330,8 @@ struct cbp_hist_t
       std::array<uint64_t, 256> IMHIST;
       uint64_t IMLIcount;      // use to monitor the iteration number
       
+      bool predloop;  // loop predictor prediction
+      // uint64_t TEST_SANITY;
       /* THESE ARE UNUSED RIGHT NOW - COULD USE predloop especially for perf? i.e. anything used as a kill switch should be actual pred at pred time not pred at update time
       // State set in predict and used in update
       // Begin LOOPPREDICTOR State
@@ -462,6 +464,9 @@ int predictorsize ()
 class CBP2016_TAGE_SC_L
 {
     public:
+        uint8_t pred_case; // MODIFIED BY EVAN
+        uint16_t pred_bank; // MODIFIED BY EVAN
+        bool loop_override; // MODIFIED BY EVAN
         //state set by predict
         int GI[NHIST + 1];      // indexes to the different tables are computed only once  
         uint GTAG[NHIST + 1];   // tags for the different tables are computed only once  
@@ -899,6 +904,7 @@ class CBP2016_TAGE_SC_L
         {
             HitBank = 0;
             AltBank = 0;
+            pred_bank = 0; // MODIFIED BY EVAN
             for (int i = 1; i <= NHIST; i += 2)
             {
                 GI[i] = gindex (PC, i, hist_to_use.phist, hist_to_use.ch_i);
@@ -975,12 +981,14 @@ class CBP2016_TAGE_SC_L
                 //USE_ALT_ON_NA is positive  use the alternate prediction
 
                 bool Huse_alt_on_na = (use_alt_on_na[INDUSEALT] >= 0);
-                if ((!Huse_alt_on_na) 
+                if ((!Huse_alt_on_na)
                         || (abs (2 * gtable[HitBank][GI[HitBank]].ctr + 1) > 1)) {
                     tage_pred = LongestMatchPred;
+                    pred_bank = HitBank; // MODIFIED BY EVAN
                 }
                 else {
                     tage_pred = alttaken;
+                    pred_bank = AltBank; // MODIFIED BY EVAN
                 }
                 HighConf =
                     (abs (2 * gtable[HitBank][GI[HitBank]].ctr + 1) >=
@@ -1031,8 +1039,9 @@ class CBP2016_TAGE_SC_L
             return pred_taken;
         }
 
-        bool predict_using_given_hist (uint64_t seq_no, uint8_t piece, UINT64 PC, const cbp_hist_t& hist_to_use, const bool pred_time_predict)
+        bool predict_using_given_hist (uint64_t seq_no, uint8_t piece, UINT64 PC, cbp_hist_t& hist_to_use, const bool pred_time_predict)
         {
+            const auto pred_hist_key = get_unique_inst_id(seq_no, piece);
             // computes the TAGE table addresses and the partial tags
             Tagepred (PC, hist_to_use);
             bool pred_taken = tage_pred;
@@ -1042,6 +1051,9 @@ class CBP2016_TAGE_SC_L
 
 #ifdef LOOPPREDICTOR
             predloop = getloop (PC, hist_to_use);   // loop prediction
+            if (pred_time_predict) { hist_to_use.predloop = predloop; pred_time_histories[pred_hist_key] = hist_to_use; }
+            if ((WITHLOOP >= 0) && (LVALID)) { loop_override = true; } // MODIFIED BY EVAN
+            else { loop_override = false; } // MODIFIED BY EVAN
             pred_taken = ((WITHLOOP >= 0) && (LVALID)) ? predloop : pred_taken;
 #endif
             pred_inter = pred_taken;
@@ -1104,21 +1116,52 @@ class CBP2016_TAGE_SC_L
                 {
                     if ((abs (LSUM) < THRES / 4))
                     {
+                        pred_case = 4; // MODIFIED BY EVAN
                         pred_taken = pred_inter;
                     }
 
                     else if ((abs (LSUM) < THRES / 2))
                     {
+                        if (SecondH < 0)
+                        {
+                            pred_case = 2; // MODIFIED BY EVAN
+                        }
+                        else
+                        {
+                            pred_case = 3; // MODIFIED BY EVAN
+                        }
                         pred_taken = (SecondH < 0) ? SCPRED : pred_inter;
+                    }
+                    else
+                    {
+                        pred_case = 1; // MODIFIED BY EVAN
                     }
                 }
 
-                if (MedConf)
+                else if (MedConf)
+                {
                     if ((abs (LSUM) < THRES / 4))
                     {
+                        if (FirstH < 0)
+                        {
+                            pred_case = 6; // MODIFIED BY EVAN
+                        }
+                        else
+                        {
+                            pred_case = 7; // MODIFIED BY EVAN
+                        }
                         pred_taken = (FirstH < 0) ? SCPRED : pred_inter;
                     }
-
+                    else
+                    {
+                        pred_case = 5;
+                    }
+                }
+                else { pred_case = 8; } // MODIFIED BY EVAN
+            }
+            else
+            {
+              pred_case = 0; // MODIFIED BY EVAN
             }
 
             return pred_taken;
@@ -1229,14 +1272,20 @@ class CBP2016_TAGE_SC_L
         void update_at_commit (uint64_t seq_no, uint8_t piece, UINT64 PC, bool resolveDir, bool predDir, UINT64 nextPC)
         {
             const auto pred_hist_key = get_unique_inst_id(seq_no, piece);
-            const auto& pred_time_history = pred_time_histories.at(pred_hist_key);
+            auto& pred_time_history = pred_time_histories.at(pred_hist_key);
             const bool pred_taken = predict_using_given_hist(seq_no, piece, PC, pred_time_history, false/*pred_time_predict*/);
+            /*
+            if (pred_taken != resolveDir) { 
+                UINT64 Sanity = MYRANDOM();
+                Sanity = MYRANDOM();
+            }
+            */
 #ifdef SC
 #ifdef LOOPPREDICTOR
             if (LVALID)
             {
-                if (pred_taken != predloop)
-                    ctrupdate (WITHLOOP, (predloop == resolveDir), 7);
+                if (predDir != pred_time_history.predloop)
+                    ctrupdate (WITHLOOP, (pred_time_history.predloop == resolveDir), 7);
             }
             loopupdate (PC, resolveDir, (pred_taken != resolveDir), pred_time_history);
 #endif
@@ -1252,7 +1301,7 @@ class CBP2016_TAGE_SC_L
             const auto pred_hist_key = get_unique_inst_id(seq_no, piece);
             //if (PC == 0x71dc50) { printf("%lx updating\n", pred_hist_key); } // for fp_9
             //if (PC == 0xfffff0d9bfe8) { printf("%lx updating\n", pred_hist_key); } // for fp_4
-            const auto& pred_time_history = pred_time_histories.at(pred_hist_key);
+            auto& pred_time_history = pred_time_histories.at(pred_hist_key);
             const bool pred_taken = predict_using_given_hist(seq_no, piece, PC, pred_time_history, false/*pred_time_predict*/);
             
             // assert(pred_time_history.LHIT == LHIT);
@@ -1622,8 +1671,6 @@ class CBP2016_TAGE_SC_L
 #endif
         }
 
-
-
 #ifdef LOOPPREDICTOR
         int lindex (UINT64 PC)
         {
@@ -1657,12 +1704,13 @@ class CBP2016_TAGE_SC_L
                             || (ltable[index].confid * ltable[index].NbIter > 128));
                     //hist_to_use.LVALID = LVALID;
 
-
                     if (ltable[index].SpecCurrentIter + 1 == ltable[index].NbIter) {
                         //hist_to_use.predloop = (!(ltable[index].dir));
+                        specloopupdate(PC);
                         return (!(ltable[index].dir));
                     }
                     //hist_to_use.predloop = ((ltable[index].dir));
+                    specloopupdate(PC);
                     return ((ltable[index].dir));
 
                 }
@@ -1677,8 +1725,6 @@ class CBP2016_TAGE_SC_L
         // SPECULATIVE LOOP UPDATE
         void specloopupdate (UINT64 PC)
         {
-            LHIT = -1;
-
             LI = lindex (PC);
             LIB = ((PC >> (LOGL - 2)) & ((1 << (LOGL - 2)) - 1));
             LTAG = (PC >> (LOGL - 2)) & ((1 << 2 * LOOPTAG) - 1);
@@ -1704,14 +1750,14 @@ class CBP2016_TAGE_SC_L
             if (LHIT >= 0)
             {
                 int index = (LI ^ ((LIB >> LHIT) << 2)) + LHIT;
-                // if (PC == 0x71dc50) { printf("H"); }
+                //if (PC == 0x71dc50) { printf("H at index %d\n", index); }
                 //already a hit 
                 if (LVALID)
                 {
 
-                    if (Taken != predloop)
+                    if (Taken != hist_to_use.predloop)
                     {
-                        //if (PC == 0x71dc50) { printf("\nDEALLOCATING\n"); }
+                        printf("\nDEALLOCATING\n");
                         // free the entry
                         ltable[index].NbIter = 0;
                         ltable[index].age = 0;
@@ -1721,7 +1767,7 @@ class CBP2016_TAGE_SC_L
                         return;
 
                     }
-                    else if ((predloop != tage_pred) || ((MYRANDOM () & 7) == 0))
+                    else if ((hist_to_use.predloop != tage_pred) || ((MYRANDOM () & 7) == 0))
                         if (ltable[index].age < CONFLOOP)
                             ltable[index].age++;
                 }
@@ -1739,8 +1785,11 @@ class CBP2016_TAGE_SC_L
                 {
                     if (ltable[index].CurrentIter == ltable[index].NbIter)
                     {
-                        if (ltable[index].confid < CONFLOOP)
+                        if (ltable[index].confid < CONFLOOP) {
                             ltable[index].confid++;
+                            if (ltable[index].confid == CONFLOOP) { printf("%lx locked into loop, think NbIter is %d\n", PC, ltable[index].NbIter); }
+                        }
+
                         if (ltable[index].NbIter < 3)
                             //just do not predict when the loop count is 1 or 2     
                         {
@@ -1774,7 +1823,6 @@ class CBP2016_TAGE_SC_L
 
             {
                 UINT64 X = MYRANDOM () & 3;
-
                 if ((MYRANDOM () & 3) == 0)
                     for (int i = 0; i < 4; i++)
                     {
@@ -1782,7 +1830,7 @@ class CBP2016_TAGE_SC_L
                         int index = (LI ^ ((LIB >> loop_hit_way_loc) << 2)) + loop_hit_way_loc;
                         if (ltable[index].age == 0)
                         {
-                            //if (PC == 0x71dc50) { printf("allocating into bank %d, index %d\n", i, index); }
+                            printf("allocating into bank %d, index %d\n", i, index);
                             ltable[index].dir = !Taken;
                             // most of mispredictions are on last iterations
                             ltable[index].TAG = LTAG;
