@@ -1284,7 +1284,7 @@ class CBP2016_TAGE_SC_L
 #ifdef LOOPPREDICTOR
             if (LVALID)
             {
-                if (predDir != pred_time_history.predloop)
+                if (pred_taken != predloop)
                     ctrupdate (WITHLOOP, (pred_time_history.predloop == resolveDir), 7);
             }
             loopupdate (PC, resolveDir, (pred_taken != resolveDir), pred_time_history);
