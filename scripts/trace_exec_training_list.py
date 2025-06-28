@@ -1,4 +1,4 @@
-import os                                                                                                                                                                                                                                                                                                                                                                                   
+import os
 import csv
 import pandas as pd
 import re
@@ -12,14 +12,18 @@ import argparse
 from pathlib import Path
 #from scipy.stats import gmean
 
+# Assuming metric_parser.py exists in the same directory or is importable
+from metric_parser import parse_metrics #
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--trace_dir', help='path to trace directory', required= True)
 parser.add_argument('--results_dir', help='path to results directory', required= True)
+parser.add_argument('--binary', default='./cbp', help='path to binary to run')
 
 args = parser.parse_args()
 trace_dir = Path(args.trace_dir)
 results_dir = Path(args.results_dir)
+binary = args.binary
 
 def get_trace_paths(start_path):
     ret_list = []
@@ -29,146 +33,79 @@ def get_trace_paths(start_path):
                 ret_list.append(os.path.join(root, my_file))
     return ret_list
 
+# Define the list of metric keys here, making it easily extensible
+BASE_METRIC_KEYS = [
+    'ExecTime',
+    '_Instr', 
+    '_Cycles',
+    '_IPC',
+    '_NumBr',
+    '_MispBr', 
+    '_BrPerCyc',
+    '_MispBrPerCyc',
+    '_MR',
+    '_MPKI',
+    '_CycWP',
+    '_CycWPAvg',
+    '_CycWPPKI',
+    '_50PercInstr',
+    '_50PercCycles',
+    '_50PercIPC',
+    '_50PercNumBr',
+    '_50PercMispBr',
+    '_50PercBrPerCyc',
+    '_50PercMispBrPerCyc',
+    '_50PercMR',
+    '_50PercMPKI',
+    '_50PercCycWP',
+    '_50PercCycWPAvg',
+    '_50PercCycWPPKI'
+]
+
+CUSTOM_METRICS = [
+    'CSC preds',
+    'RUNLTS preds'
+]
+
+METRIC_KEYS = BASE_METRIC_KEYS + CUSTOM_METRICS
+
+def create_run_results_dict(wl_name, run_name, trace_size, pass_status_str, metrics_data, metric_keys):
+    """
+    Creates the dictionary of run results based on a list of metric keys.
+    """
+    retval = {
+        'Workload': wl_name,
+        'Run': run_name,
+        'TraceSize': trace_size,
+        'Status': pass_status_str,
+    }
+
+    for key in metric_keys:
+        # Remove the leading underscore if present for display in the DataFrame
+        # e.g., '_Instr' becomes 'Instr', '_50PercIPC' becomes '50PercIPC'
+        display_key = key.lstrip('_') 
+        retval[display_key] = metrics_data.get(key)
+    
+    return retval
+
 def process_run_op(pass_status, my_trace_path, my_run_name, op_file):
     run_name_split = re.split(r"\/", my_run_name)
     wl_name = run_name_split[0]
     run_name = run_name_split[1]
     print(f'Extracting data from : {op_file} |  WL:{wl_name} | Run:{run_name}')
-    exec_time = 0
-
-    _Instr = 0
-    _Cycles = 0
-    _IPC = 0
-    _NumBr = 0
-    _MispBr = 0
-    _BrPerCyc = 0
-    _MispBrPerCyc = 0
-    _MR = 0
-    _MPKI = 0
-    _CycWP = 0
-    _CycWPAvg = 0
-    _CycWPPKI = 0
     
-    _50PercInstr = 0
-    _50PercCycles = 0
-    _50PercIPC = 0
-    _50PercNumBr = 0
-    _50PercMispBr = 0
-    _50PercBrPerCyc = 0
-    _50PercMispBrPerCyc = 0
-    _50PercMR = 0
-    _50PercMPKI = 0
-    _50PercCycWP = 0
-    _50PercCycWPAvg = 0
-    _50PercCycWPPKI = 0
-
-    trace_size = os.path.getsize(trace_path)/(1024 * 1024)
+    trace_size = os.path.getsize(my_trace_path)/(1024 * 1024)
 
     pass_status_str = 'Fail'
-
-    process_50perc_section = False
-    process_100perc_section = False
-
-    _50perc_section_header = 'DIRECT CONDITIONAL BRANCH PREDICTION MEASUREMENTS (50 Perc instructions)'
-    _100perc_section_header = 'DIRECT CONDITIONAL BRANCH PREDICTION MEASUREMENTS (Full Simulation i.e. Counts Not Reset When Warmup Ends)'
-
-    found_50perc_line_to_process = False
-    found_100perc_line_to_process = False
+    metrics = {} # Initialize metrics dictionary
 
     if pass_status:
         pass_status_str = 'Pass'
-        with open(op_file, "r") as text_file:
-            #for line in my_run_output.splitlines():
-            for line in text_file:
-                if not line.strip():
-                    continue
+        metrics = parse_metrics(op_file) # Call the parsing function from metric_parser.py
 
-                if('ExecTime' in line):
-                    exec_time = line.strip().split()[-1]
-
-                if(not process_50perc_section and _50perc_section_header in line):
-                    process_50perc_section = True
-                    process_100perc_section = False
-
-                if(not process_100perc_section and _100perc_section_header in line):
-                    process_50perc_section = False
-                    process_100perc_section = True
-
-
-                if process_50perc_section:
-                    if (found_50perc_line_to_process):
-                        curr_split_line = line.split()
-                        _50PercInstr              = curr_split_line[0]
-                        _50PercCycles             = curr_split_line[1]
-                        _50PercIPC                = curr_split_line[2]
-                        _50PercNumBr              = curr_split_line[3]
-                        _50PercMispBr             = curr_split_line[4]
-                        _50PercBrPerCyc           = curr_split_line[5]
-                        _50PercMispBrPerCyc       = curr_split_line[6]
-                        _50PercMR                 = curr_split_line[7]
-                        _50PercMPKI               = curr_split_line[8]
-                        _50PercCycWP              = curr_split_line[9]
-                        _50PercCycWPAvg           = curr_split_line[10]
-                        _50PercCycWPPKI           = curr_split_line[11]
-                        process_50perc_section = False
-                        found_50perc_line_to_process = False
-
-                    if(all(x in line for x in ['Instr', 'Cycles', 'IPC', 'NumBr', 'MispBr', 'BrPerCyc', 'MispBrPerCyc', 'MR', 'MPKI', 'CycWP', 'CycWPAvg'])):
-                        found_50perc_line_to_process = True
-
-                if process_100perc_section:
-                    if (found_100perc_line_to_process):
-                        curr_split_line = line.split()
-                        _Instr              = curr_split_line[0]
-                        _Cycles             = curr_split_line[1]
-                        _IPC                = curr_split_line[2]
-                        _NumBr              = curr_split_line[3]
-                        _MispBr             = curr_split_line[4]
-                        _BrPerCyc           = curr_split_line[5]
-                        _MispBrPerCyc       = curr_split_line[6]
-                        _MR                 = curr_split_line[7]
-                        _MPKI               = curr_split_line[8]
-                        _CycWP              = curr_split_line[9]
-                        _CycWPAvg           = curr_split_line[10]
-                        _CycWPPKI           = curr_split_line[11]
-                        process_100perc_section = False
-                        found_100perc_line_to_process = False
-                    if(all(x in line for x in ['Instr', 'Cycles', 'IPC', 'NumBr', 'MispBr', 'BrPerCyc', 'MispBrPerCyc', 'MR', 'MPKI', 'CycWP', 'CycWPAvg'])):
-                        found_100perc_line_to_process = True
-
-    retval = {
-            'Workload'                : wl_name,
-            'Run'                     : run_name,
-            'TraceSize'               : trace_size,
-            'Status'                  : pass_status_str,
-            'ExecTime'                : exec_time,
-
-            'Instr'                   : _Instr,
-            'Cycles'                  : _Cycles,
-            'IPC'                     : _IPC,
-            'NumBr'                   : _NumBr,
-            'MispBr'                  : _MispBr,
-            'BrPerCyc'                : _BrPerCyc,
-            'MispBrPerCyc'            : _MispBrPerCyc,
-            'MR'                      : _MR,
-            'MPKI'                    : _MPKI,
-            'CycWP'                   : _CycWP,
-            'CycWPAvg'                : _CycWPAvg,
-            'CycWPPKI'                : _CycWPPKI,
-
-            '50PercInstr'             : _50PercInstr,
-            '50PercCycles'            : _50PercCycles,
-            '50PercIPC'               : _50PercIPC,
-            '50PercNumBr'             : _50PercNumBr,
-            '50PercMispBr'            : _50PercMispBr,
-            '50PercBrPerCyc'          : _50PercBrPerCyc,
-            '50PercMispBrPerCyc'      : _50PercMispBrPerCyc,
-            '50PercMR'                : _50PercMR,
-            '50PercMPKI'              : _50PercMPKI,
-            '50PercCycWP'             : _50PercCycWP,
-            '50PercCycWPAvg'          : _50PercCycWPAvg,
-            '50PercCycWPPKI'          : _50PercCycWPPKI,
-    }
+    # Use the new function to create the return dictionary
+    retval = create_run_results_dict(wl_name, run_name, trace_size, pass_status_str, metrics, METRIC_KEYS)
+    
     return retval
 
 my_traces = get_trace_paths(trace_dir)
@@ -192,8 +129,8 @@ def execute_trace(my_trace_path):
 
     do_process = True
     my_run_name = f'{my_wl}/{run_name}'
-    exec_cmd = f'./cbp {my_trace_path}'
-    op_file = f'{results_dir}/{my_wl}/{run_name}.log'
+    exec_cmd = f'{binary} {my_trace_path}'
+    op_file = f'{results_dir}/{my_wl}/{run_name}.txt'
     if os.path.exists(op_file):
         #print(f"OP file:{op_file} already exists. Not running again!")
         do_process = False
@@ -227,38 +164,93 @@ if __name__ == '__main__':
     #for my_trace in my_traces:
     #    results.append(execute_trace(my_trace))
     
-    df = pd.DataFrame(columns=['Workload', 'Run', 'TraceSize', 'ExecTime', 'Instr', 'Cycles', 'IPC', 'NumBr', 'MispBr', 'BrPerCyc', 'MispBrPerCyc', 'MR', 'MPKI', 'CycWP',  'CycWPAvg', 'CycWPPKI', '50PercInstr', '50PercCycles', '50PercIPC', '50PercNumBr', '50PercMispBr', '50PercBrPerCyc', '50PercMispBrPerCyc', '50PercMR', '50PercMPKI', '50PercCycWP', '50PercCycWPAvg', '50PercCycWPPKI'])
+    # Dynamically build DataFrame columns based on what's returned by process_run_op
+    # Get all possible keys from the first successful run_dict to define columns
+    initial_run_dict = {}
     for my_result in results:
         pass_status = my_result[0]
         trace_path = my_result[1]
         op_file = my_result[2]
         my_run_name = my_result[3]
-        run_dict = {}
-        run_dict = process_run_op(pass_status, trace_path, my_run_name, op_file)
+        if pass_status: # Only get keys from a successful run to ensure all metrics are present
+            # Call process_run_op here to get the full dictionary structure
+            initial_run_dict = process_run_op(pass_status, trace_path, my_run_name, op_file)
+            break # Found a successful run, break to use its keys
+
+    if initial_run_dict:
+        df_columns = list(initial_run_dict.keys())
+    else:
+        # Fallback to a predefined list if no successful run to get keys from
+        # Ensure this fallback matches the keys generated by create_run_results_dict
+        df_columns = ['Workload', 'Run', 'TraceSize', 'Status'] + [key.lstrip('_') for key in METRIC_KEYS]
+    
+    df = pd.DataFrame(columns=df_columns) #
+
+    for my_result in results:
+        pass_status = my_result[0]
+        trace_path = my_result[1]
+        op_file = my_result[2]
+        my_run_name = my_result[3]
+        run_dict = process_run_op(pass_status, trace_path, my_run_name, op_file) #
         my_df = pd.DataFrame([run_dict])
         if not df.empty:
             df = pd.concat([df, my_df], ignore_index=True)
         else:
             df = my_df.copy()
-    print(df)
-    df.to_csv(f'{results_dir}/results.csv', index=False)
+    print(df) #
+    df.to_csv(f'{results_dir}/results.csv', index=False) #
     
     
-    unique_wls = df['Workload'].unique()
+    unique_wls = df['Workload'].unique() #
     
-    print('\n\n----------------------------------Aggregate Metrics Per Workload Category----------------------------------\n')
+    print('\n\n----------------------------------Aggregate Metrics Per Workload Category----------------------------------\n') #
     for my_wl in unique_wls:
-        my_wl_br_misp_pki_amean = df[df['Workload'] == my_wl]['50PercMPKI'].astype(float).mean()
-        my_wl_cyc_wp_pki_amean = df[df['Workload'] == my_wl]['50PercCycWPPKI'].astype(float).mean()
-        print(f'WL:{my_wl:<10} Branch Misprediction PKI(BrMisPKI) AMean : {my_wl_br_misp_pki_amean}')
-        print(f'WL:{my_wl:<10} Cycles On Wrong-Path PKI(CycWpPKI) AMean : {my_wl_cyc_wp_pki_amean}')
-    print('-----------------------------------------------------------------------------------------------------------')
+        # Check if column exists AND if it contains non-None values before converting to float and calculating mean
+        if '50PercMPKI' in df.columns and df[df['Workload'] == my_wl]['50PercMPKI'].dropna().empty == False:
+            my_wl_br_misp_pki_amean = df[df['Workload'] == my_wl]['50PercMPKI'].astype(float).mean() #
+            print(f'WL:{my_wl:<10} Branch Misprediction PKI(BrMisPKI) AMean : {my_wl_br_misp_pki_amean}') #
+        else:
+            print(f'WL:{my_wl:<10} Branch Misprediction PKI(BrMisPKI) AMean : N/A (Missing or all None values)')
+            
+        if '50PercCycWPPKI' in df.columns and df[df['Workload'] == my_wl]['50PercCycWPPKI'].dropna().empty == False:
+            my_wl_cyc_wp_pki_amean = df[df['Workload'] == my_wl]['50PercCycWPPKI'].astype(float).mean() #
+            print(f'WL:{my_wl:<10} Cycles On Wrong-Path PKI(CycWpPKI) AMean : {my_wl_cyc_wp_pki_amean}') #
+        else:
+            print(f'WL:{my_wl:<10} Cycles On Wrong-Path PKI(CycWpPKI) AMean : N/A (Missing or all None values)')
+    print('-----------------------------------------------------------------------------------------------------------') #
     
-    br_misp_pki_amean = df['50PercMPKI'].astype(float).mean()
-    cyc_wp_pki_amean = df['50PercCycWPPKI'].astype(float).mean()
+    br_misp_pki_amean = 'N/A'
+    cyc_wp_pki_amean = 'N/A'
+
+    if '50PercMPKI' in df.columns and df['50PercMPKI'].dropna().empty == False:
+        br_misp_pki_amean = df['50PercMPKI'].astype(float).mean() #
+    if '50PercCycWPPKI' in df.columns and df['50PercCycWPPKI'].dropna().empty == False:
+        cyc_wp_pki_amean = df['50PercCycWPPKI'].astype(float).mean() #
     #ipc_geomean = df['50PercIPC'].astype(float).apply(gmean)
     
-    print('\n\n---------------------------------------------Aggregate Metrics---------------------------------------------\n')
-    print(f'Branch Misprediction PKI(BrMisPKI) AMean : {br_misp_pki_amean}')
-    print(f'Cycles On Wrong-Path PKI(CycWpPKI) AMean : {cyc_wp_pki_amean}')
-    print('-----------------------------------------------------------------------------------------------------------')
+    print('\n\n---------------------------------------------Aggregate Metrics---------------------------------------------\n') #
+    print(f'Branch Misprediction PKI(BrMisPKI) AMean : {br_misp_pki_amean}') #
+    print(f'Cycles On Wrong-Path PKI(CycWpPKI) AMean : {cyc_wp_pki_amean}') #
+    print('-----------------------------------------------------------------------------------------------------------') #
+
+    print('\n\n---------------------------------------------Aggregate Metrics (CUSTOM)---------------------------------------------\n') #
+    # Aggregate Custom Metrics Overall
+    for custom_metric_key in CUSTOM_METRICS:
+        display_key = custom_metric_key.lstrip('_')
+        custom_metric_overall_agg = 'N/A'
+        if display_key in df.columns and not df[display_key].dropna().empty:
+            # Check if the values contain '%'
+            # Convert to string first to use .str accessor, then fillna('') to handle NaNs during string operations
+            temp_series = df[display_key].astype(str).str.contains('%', na=False)
+            
+            if temp_series.any(): # If any value contains '%'
+                # Remove '%' and convert to float, then calculate mean
+                custom_metric_overall_agg = df[display_key].astype(str).str.replace('%', '', regex=False).astype(float).mean()
+                print(f'{display_key} AMean (Percentage) : {custom_metric_overall_agg}')
+            else:
+                # Otherwise, calculate sum
+                custom_metric_overall_agg = df[display_key].astype(float).sum()
+                print(f'{display_key} Sum : {custom_metric_overall_agg}')
+        else:
+            print(f'{display_key} : N/A')
+    print('--------------------------------------------------------------------------------------------------------------------') #

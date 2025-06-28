@@ -303,5 +303,7 @@ void notify_instr_commit(uint64_t seq_no, uint8_t piece, uint64_t pc, const bool
 void endCondDirPredictor()
 {
     cbp2025_RUNLTS.terminate();
+    printf("\nCSC preds: %lu\n", preds_from_csc);
+    printf("RUNLTS preds: %lu\n", preds_from_tage);
     std::fflush(stdout);
 }
