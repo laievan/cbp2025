@@ -1,83 +1,33 @@
-#ifndef _PREDICTOR_H_
-#define _PREDICTOR_H_
+#include <memory>
+#include <stdint.h>
 
-#include <stdlib.h>
+// ADDING ON CSC
+#include "csc.h"
 
-struct SampleHist
-{
-      uint64_t ghist;
-      bool tage_pred;
-      //
-      SampleHist()
-      {
-          ghist = 0;
-      }
-};
+using s8 = int8_t;
+using u8 = uint8_t;
+using u16 = uint16_t;
+using s32 = int32_t;
+using u64 = uint64_t;
 
+namespace nRUNLTS {
+class RUNLTS;
+}
 
-class SampleCondPredictor
-{
-        SampleHist active_hist;
-        std::unordered_map<uint64_t/*key*/, SampleHist/*val*/> pred_time_histories;
-    public:
+class CBP2025_RUNLTS {
+    std::shared_ptr<nRUNLTS::RUNLTS> p_impl;
 
-        SampleCondPredictor (void)
-        {
-        }
+    // ADDING ON CSC
+    Correlation csc;
 
-        void setup()
-        {
-        }
-
-        void terminate()
-        {
-        }
-
-        // sample function to get unique instruction id
-        uint64_t get_unique_inst_id(uint64_t seq_no, uint8_t piece) const
-        {
-            assert(piece < 16);
-            return (seq_no << 4) | (piece & 0x000F);
-        }
-
-        bool predict (uint64_t seq_no, uint8_t piece, uint64_t PC, const bool tage_pred)
-        {
-            active_hist.tage_pred = tage_pred;
-            // checkpoint current hist
-            pred_time_histories.emplace(get_unique_inst_id(seq_no, piece), active_hist);
-            const bool pred_taken = predict_using_given_hist(seq_no, piece, PC, active_hist, true/*pred_time_predict*/);
-            return pred_taken;
-        }
-
-        bool predict_using_given_hist (uint64_t seq_no, uint8_t piece, uint64_t PC, const SampleHist& hist_to_use, const bool pred_time_predict)
-        {
-            return hist_to_use.tage_pred;
-        }
-
-        void history_update (uint64_t seq_no, uint8_t piece, uint64_t PC, bool taken, uint64_t nextPC)
-        {
-            active_hist.ghist = active_hist.ghist << 1;
-            if(taken)
-            {
-                active_hist.ghist |= 1;
-            }
-        }
-
-        void update (uint64_t seq_no, uint8_t piece, uint64_t PC, bool resolveDir, bool predDir, uint64_t nextPC)
-        {
-            const auto pred_hist_key = get_unique_inst_id(seq_no, piece);
-            const auto& pred_time_history = pred_time_histories.at(pred_hist_key);
-            update(PC, resolveDir, predDir, nextPC, pred_time_history);
-            pred_time_histories.erase(pred_hist_key);
-        }
-
-        void update (uint64_t PC, bool resolveDir, bool pred_taken, uint64_t nextPC, const SampleHist& hist_to_use)
-        {
-        }
-};
-// =================
-// Predictor End
-// =================
-
-#endif
-static SampleCondPredictor cond_predictor_impl;
+public:
+    void setup();
+    bool predict(u64 seq_no, u8 piece, u64 PC);
+    void update(u64 seq_no, u8 piece, u64 PC, bool resolveDir, bool predDir, u64 nextPC);
+    void history_update(u64 seq_no, u8 piece, u64 PC, int brtype, bool pred_dir, bool resolve_dir, u64 nextPC);
+    void TrackOtherInst(u64 PC, int brtype, bool pred_dir, bool resolve_dir, u64 nextPC);
+    void terminate();
+    void decode_notify(u64 seq_no, u8 piece, u64 dst_reg);
+    void execute_notify(u64 seq_no, u8 piece, u64 dst_reg, u64 value);
+    void kill_checkpoint(u64 seq_no, u8 piece);
+} inline cbp2025_RUNLTS;
