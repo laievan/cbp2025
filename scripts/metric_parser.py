@@ -50,6 +50,10 @@ def parse_metrics(op_file):
             add_metric_if_found(metrics, "ExecTime", line)
             add_metric_if_found(metrics, "CSC preds", line)
             add_metric_if_found(metrics, "RUNLTS preds", line)
+            add_metric_if_found(metrics, "CSC coverage", line)
+            add_metric_if_found(metrics, "RUNLTS coverage", line)
+            add_metric_if_found(metrics, "CSC accuracy", line)
+            add_metric_if_found(metrics, "RUNLTS accuracy", line)
 
             if(not process_50perc_section and _50perc_section_header in line):
                 process_50perc_section = True

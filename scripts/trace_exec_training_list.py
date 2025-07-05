@@ -64,7 +64,11 @@ BASE_METRIC_KEYS = [
 
 CUSTOM_METRICS = [
     'CSC preds',
-    'RUNLTS preds'
+    'RUNLTS preds',
+    'CSC coverage',
+    'CSC accuracy',
+    'RUNLTS coverage',
+    'RUNLTS accuracy'
 ]
 
 METRIC_KEYS = BASE_METRIC_KEYS + CUSTOM_METRICS

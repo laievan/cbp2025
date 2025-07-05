@@ -18,7 +18,10 @@
 
 #include "lib/sim_common_structs.h"
 #include "my_cond_branch_predictor.h"
+#include "stats.h"
 #include <cassert>
+
+uint8_t use_csc_counter = (1 << 3) - 1; // counter to stop csc if it's bad
 
 //
 // beginCondDirPredictor()
@@ -42,6 +45,18 @@ void beginCondDirPredictor()
     correlator.init_pred(knob_names, knob_enable);
     epoch = 0;
     num_unique_elements_epoch = 0;
+
+    if (USE_CSC) {
+        printf("\n\n!!!USING CSC!!!\n\n");
+        #ifdef USE_BLOOM
+        printf("-USING BLOOM FILTER FOR SELECTION\n");
+        #ifdef ORACLE_BLOOM
+        printf("-USING ORACLE BLOOM\n");
+        #endif // ORACLE_BLOOM
+        #else
+        printf("-USING CSC STRENGTH FOR SELECTION\n");
+        #endif // USE_BLOOM
+    } 
     /*-----------------------------------------------*/
 }
 
@@ -65,7 +80,6 @@ void notify_instr_fetch(uint64_t seq_no, uint8_t piece, uint64_t pc, const uint6
 bool get_cond_dir_prediction(uint64_t seq_no, uint8_t piece, uint64_t pc, const uint64_t pred_cycle)
 {
     const bool runlts_pred = cbp2025_RUNLTS.predict(seq_no, piece, pc);
-    //return runlts_pred; FOR RUNLTS ONLY
 
     /*-----------------------------------------------*/
     // ADDING ON CSC
@@ -75,21 +89,37 @@ bool get_cond_dir_prediction(uint64_t seq_no, uint8_t piece, uint64_t pc, const 
     knobs[LongBrsInLast1K] = last_1K_longbrs.size();
 
     const bool csc_pred = correlator.pred(knobs, uniq(seq_no, piece));
+    uint64_t use_csc_thresh = CSC_CTR_MAX * (knobs.size() - 1);
+    int64_t csc_raw_pred = correlator.raw_pred(knobs, uniq(seq_no, piece));
+    uint64_t csc_strength = static_cast<uint64_t>(std::llabs(csc_raw_pred));
+    const bool use_csc = csc_strength >= use_csc_thresh;
 
     bool final_pred;
+    #ifdef USE_BLOOM
     #ifdef ORACLE_BLOOM
     if (!oracle_bloom.count(pc))
     #else
     if (!bloom1.possiblyContains(pc))
-    #endif
+    #endif // ORACLE_BOOM
+    #else
+    if (USE_CSC && (use_csc_counter > 0) && use_csc)
+    #endif // USE_BLOOM
     {
+        // STATS
+        branch_stats_map[pc].pred_with_csc++;
+        pred_used[seq_no] = 1;
+
         final_pred = csc_pred;
-        preds_from_csc++;
+        pred_from_csc++;
     }
     else
     {
+        // STATS
+        branch_stats_map[pc].pred_with_runlts++;
+        pred_used[seq_no] = 0;
+
         final_pred = runlts_pred;
-        preds_from_tage++;
+        pred_from_runlts++;
     }
 
     return final_pred;
@@ -241,11 +271,57 @@ void notify_instr_execute_resolve(uint64_t seq_no, uint8_t piece, uint64_t pc, c
         if (is_cond_br(_exec_info.dec_info.insn_class)) {
             const bool _resolve_dir = _exec_info.taken.value();
             const uint64_t _next_pc = _exec_info.next_pc;
+			bool taken = _resolve_dir;
+            bool misp = _resolve_dir != pred_dir;
+
+			/*-----------------------------------------------*/
+            // STATS
+            // PER PC STATS
+            if (branch_stats_map.find(pc) == branch_stats_map.end()) { branch_stats_map[pc] = BranchStats(); }
+            BranchStats &stats = branch_stats_map[pc];
+            uint8_t which_pred = pred_used[seq_no];
+            pred_used.erase(seq_no);
+
+            if (taken) { stats.taken++; }
+            else { stats.non_taken++; }
+
+            if (misp) {
+                stats.total_mispred++;
+                switch (which_pred) {
+                    case 0:
+                        stats.pred_outcomes[1]++;
+                        used_runlts_wrong++;
+                        break;
+                    case 1:
+                        stats.pred_outcomes[3]++;
+                        used_csc_wrong++;
+                        use_csc_counter = std::max(use_csc_counter - 1, -(1 << 3));
+                        break;
+                    default:
+                        assert(false);
+                        break;
+                }
+            }
+            else {
+                switch (which_pred) {
+                    case 0:
+                        stats.pred_outcomes[0]++;
+                        used_runlts_right++;
+                        break;
+                    case 1:
+                        stats.pred_outcomes[2]++;
+                        used_csc_right++;
+                        use_csc_counter = std::min(use_csc_counter + 1, (1 << 3) - 1);
+                        break;
+                    default:
+                        assert(false);
+                        break;
+                }
+            }
+			/*-----------------------------------------------*/
 
 			/*-----------------------------------------------*/
 			// ADDING ON CSC
-			bool taken = _resolve_dir;
-            bool misp = _resolve_dir != pred_dir;
 
             if (misp)
             {
@@ -303,7 +379,15 @@ void notify_instr_commit(uint64_t seq_no, uint8_t piece, uint64_t pc, const bool
 void endCondDirPredictor()
 {
     cbp2025_RUNLTS.terminate();
-    printf("\nCSC preds: %lu\n", preds_from_csc);
-    printf("RUNLTS preds: %lu\n", preds_from_tage);
+    printf("\nCSC preds: %lu\n", pred_from_csc);
+    printf("RUNLTS preds: %lu\n", pred_from_runlts);
+    double csc_coverage = 100.0 * static_cast<double>(pred_from_csc) / (pred_from_csc + pred_from_runlts);
+    printf("CSC coverage: %.4g%%\n", csc_coverage);
+    double csc_accuracy = 100.0 * static_cast<double>(used_csc_right) / (pred_from_csc);
+    printf("CSC accuracy: %.4g%%\n", csc_accuracy);
+    double runlts_coverage = 100.0 * static_cast<double>(pred_from_runlts) / (pred_from_csc + pred_from_runlts);
+    printf("RUNLTS coverage: %.4g%%\n", runlts_coverage);
+    double runlts_accuracy = 100.0 * static_cast<double>(used_runlts_right) / (pred_from_runlts);
+    printf("RUNLTS accuracy: %.4g%%\n", runlts_accuracy);
     std::fflush(stdout);
 }

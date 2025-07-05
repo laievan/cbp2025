@@ -42,9 +42,6 @@ u64 avg(std::deque<u64> const &q)
     return sum / count;
 }
 
-static uint64_t preds_from_csc = 0;
-static uint64_t preds_from_tage = 0;
-
 static Correlation correlator;
 static std::vector<uint64_t> knobs;
 namespace

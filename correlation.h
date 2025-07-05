@@ -132,6 +132,7 @@ public:
 
 		size_t i = 0;
 		for (auto &f: features) {
+            f.x.clear();
 			f.featureName = names[i++];
 		}
 
