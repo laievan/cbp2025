@@ -10,7 +10,7 @@
 #define ORACLE_BLOOM
 #define CSC_CTR_MAX ((1 << LOGWS - 1) - 1)
 //#define USE_BLOOM
-#define USE_CSC true
+#define USE_CSC false
 
 //#define BLOOM_SIZE_INDIV 40960
 //#define BLOOM_SIZE 195227 * 2

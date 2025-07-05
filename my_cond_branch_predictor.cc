@@ -141,13 +141,13 @@ std::array<RegFileStateEntry, 65> RegFileState = {};
 
 static constexpr int LogMaxNewlyCounters = 16;
 
-static constexpr int NHIST = 23;
+static constexpr int NHIST = 7;
 static constexpr double HistRate = 1.19;
 static constexpr int Born2 = 18;
 static constexpr int MINHIST = 6;
 
 using UINT64 = uint64_t;
-#define SC
+//#define SC
 
 #define ASSERT_EQ(a, b)                                                                                            \
     if (a != b) {                                                                                                  \
@@ -623,19 +623,19 @@ public:
     }
 };
 
-#define NBANKLOW 9 // number of banks in the shared bank-interleaved for the low history lengths
-#define NBANKHIGH 25 // number of banks in the shared bank-interleaved for the  history lengths
+#define NBANKLOW 3 // number of banks in the shared bank-interleaved for the low history lengths
+#define NBANKHIGH 4 // number of banks in the shared bank-interleaved for the  history lengths
 
 int SizeTable[NHIST + 1];
 
-#define BORN 5 // below BORN in the table for low history lengths, >= BORN in the table for high history lengths,
+#define BORN 4 // below BORN in the table for low history lengths, >= BORN in the table for high history lengths,
 
-#define LOGG 11 /* logsize of the  banks in the  tagged TAGE tables */
+#define LOGG 9 /* logsize of the  banks in the  tagged TAGE tables */
 #define TBITS 9 // minimum width of the tags  (low history lengths), +4 for high history lengths
 
 #define NNN 2 // number of extra entries allocated on a TAGE misprediction (1+NNN)
 #define HYSTSHIFT 2 // bimodal hysteresis shared by 4 entries
-#define LOGB 17 // log of number of entries in bimodal predictor
+#define LOGB 13 // log of number of entries in bimodal predictor
 
 std::array<int8_t, 1ull << LOGB> bim_pred;
 std::array<int8_t, 1ull << LOGB - HYSTSHIFT> bim_hyst;
