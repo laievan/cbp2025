@@ -66,6 +66,7 @@ struct BranchStats {
 };
 
 std::unordered_map<uint64_t, BranchStats> branch_stats_map; // PER PC STATS
+std::unordered_map<uint64_t, uint64_t> first_time_seq_no_map; // key = PC, value = seq_no
 std::unordered_map<uint64_t, uint8_t> pred_used; // FOR BLAMING CORRECT PRED 0 = RUNLTS, 1 = CSC
 
 // Global stats
@@ -75,3 +76,10 @@ uint64_t used_csc_right;
 uint64_t used_csc_wrong;
 uint64_t used_runlts_right;
 uint64_t used_runlts_wrong;
+uint64_t unique_pcs;
+uint64_t first_time_right;
+uint64_t first_time_wrong;
+uint64_t csc_first_time_right;
+uint64_t csc_first_time_wrong;
+uint64_t runlts_first_time_right;
+uint64_t runlts_first_time_wrong;

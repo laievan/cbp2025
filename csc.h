@@ -1,5 +1,6 @@
 #ifndef __CSC_H__
 #define __CSC_H__
+#include "csc_knobs.h"
 #include "correlation.h"
 #include "bloom.h"
 #include <deque>
@@ -92,7 +93,7 @@ static int num_unique_elements_epoch = 0;
 /// this is num of bits
 // BloomFilter1<BLOOM_SIZE> bloom1 = BloomFilter1<BLOOM_SIZE>(2);
 // BloomFilter2<BLOOM_SIZE> bloom2 = BloomFilter2<BLOOM_SIZE>(2);
-static BloomFilter1<BLS> bloom1 = BloomFilter1<BLS>(BLB);
+static BloomFilter1<BLS> bloom1 = BloomFilter1<BLS>(BLB, BCLEAR);
 // static BloomFilter2<BLS> bloom2 = BloomFilter2<BLS>(BLB);
 static std::unordered_set<uint64_t> oracle_bloom;
 

@@ -21,7 +21,7 @@
 #include "stats.h"
 #include <cassert>
 
-uint8_t use_csc_counter = (1 << 3) - 1; // counter to stop csc if it's bad
+uint8_t use_csc_shutoff_ctr = (1 << 3) - 1; // counter to stop csc if it's bad
 
 //
 // beginCondDirPredictor()
@@ -48,14 +48,18 @@ void beginCondDirPredictor()
 
     if (USE_CSC) {
         printf("\n\n!!!USING CSC!!!\n\n");
-        #ifdef USE_BLOOM
+        if (USE_BLOOM) {
         printf("-USING BLOOM FILTER FOR SELECTION\n");
-        #ifdef ORACLE_BLOOM
-        printf("-USING ORACLE BLOOM\n");
-        #endif // ORACLE_BLOOM
-        #else
-        printf("-USING CSC STRENGTH FOR SELECTION\n");
-        #endif // USE_BLOOM
+            if (ORACLE_BLOOM) {
+                printf("-USING ORACLE BLOOM\n");
+            }
+        }
+        if (USE_CSC_STRENGTH) {
+            printf("-USING CSC STRENGTH FOR SELECTION\n");
+        }
+        if (USE_CSC_SHUTOFF_CTR) {
+            printf("-USING CSC SHUTOFF COUNTER FOR SELECTION\n");
+        }
     } 
     /*-----------------------------------------------*/
 }
@@ -92,18 +96,33 @@ bool get_cond_dir_prediction(uint64_t seq_no, uint8_t piece, uint64_t pc, const 
     uint64_t use_csc_thresh = CSC_CTR_MAX * (knobs.size() - 1);
     int64_t csc_raw_pred = correlator.raw_pred(knobs, uniq(seq_no, piece));
     uint64_t csc_strength = static_cast<uint64_t>(std::llabs(csc_raw_pred));
-    const bool use_csc = csc_strength >= use_csc_thresh;
+    const bool off_strength_use_csc = csc_strength >= use_csc_thresh;
 
     bool final_pred;
-    #ifdef USE_BLOOM
-    #ifdef ORACLE_BLOOM
-    if (!oracle_bloom.count(pc))
-    #else
-    if (!bloom1.possiblyContains(pc))
-    #endif // ORACLE_BOOM
-    #else
-    if (USE_CSC && (use_csc_counter > 0) && use_csc)
-    #endif // USE_BLOOM
+    
+    bool pick_csc = false;
+
+    bool shutoff = false;
+    if (USE_CSC_SHUTOFF_CTR && !(use_csc_shutoff_ctr > 0)) {
+        shutoff = true;
+        pick_csc = false;
+    }
+
+    if (USE_CSC && !shutoff) {
+        if (USE_BLOOM) {
+            if (ORACLE_BLOOM) {
+                pick_csc = !oracle_bloom.count(pc); 
+            }
+            else {
+                pick_csc = !bloom1.possiblyContains(pc);
+            }
+        }
+        if (USE_CSC_STRENGTH) {
+            pick_csc = off_strength_use_csc;
+        }
+    }
+
+    if (pick_csc)
     {
         // STATS
         branch_stats_map[pc].pred_with_csc++;
@@ -120,6 +139,12 @@ bool get_cond_dir_prediction(uint64_t seq_no, uint8_t piece, uint64_t pc, const 
 
         final_pred = runlts_pred;
         pred_from_runlts++;
+    }
+
+    // FIRST TIME PC STATS
+    if (!first_time_seq_no_map.count(pc)) {
+        unique_pcs++; 
+        first_time_seq_no_map[pc] = seq_no;
     }
 
     return final_pred;
@@ -282,41 +307,53 @@ void notify_instr_execute_resolve(uint64_t seq_no, uint8_t piece, uint64_t pc, c
             uint8_t which_pred = pred_used[seq_no];
             pred_used.erase(seq_no);
 
+            bool first_time = (first_time_seq_no_map[pc] == seq_no);
+
             if (taken) { stats.taken++; }
             else { stats.non_taken++; }
 
-            if (misp) {
+            if (misp) { // PRED WRONG
                 stats.total_mispred++;
                 switch (which_pred) {
                     case 0:
                         stats.pred_outcomes[1]++;
                         used_runlts_wrong++;
+                        if (first_time) { runlts_first_time_wrong++; }
                         break;
                     case 1:
                         stats.pred_outcomes[3]++;
                         used_csc_wrong++;
-                        use_csc_counter = std::max(use_csc_counter - 1, -(1 << 3));
+                        use_csc_shutoff_ctr = std::max(use_csc_shutoff_ctr - 1, -(1 << 3));
+                        if (first_time) { csc_first_time_wrong++; }
                         break;
                     default:
                         assert(false);
                         break;
                 }
+
+                // FIRST TIME STATS
+                if (first_time) { first_time_wrong++; }
             }
-            else {
+            else { // PRED RIGHT
                 switch (which_pred) {
                     case 0:
                         stats.pred_outcomes[0]++;
                         used_runlts_right++;
+                        if (first_time) { runlts_first_time_right++; }
                         break;
                     case 1:
                         stats.pred_outcomes[2]++;
                         used_csc_right++;
-                        use_csc_counter = std::min(use_csc_counter + 1, (1 << 3) - 1);
+                        use_csc_shutoff_ctr = std::min(use_csc_shutoff_ctr + 1, (1 << 3) - 1);
+                        if (first_time) { csc_first_time_right++; }
                         break;
                     default:
                         assert(false);
                         break;
                 }
+
+                // FIRST TIME STATS
+                if (first_time) { first_time_right++; }
             }
 			/*-----------------------------------------------*/
 
@@ -325,31 +362,42 @@ void notify_instr_execute_resolve(uint64_t seq_no, uint8_t piece, uint64_t pc, c
 
             if (misp)
             {
-                #ifdef ORACLE_BLOOM
-				oracle_bloom.insert(pc); // oracle implementation
-                #else
-                // if(!bloom1.possiblyContains(pc) || !bloom2.possiblyContains(pc)){
-                if (!bloom1.possiblyContains(pc) && epoch % 2 == 0)
-                {
-                    num_unique_elements_epoch++;
-                    bloom1.insert(pc);
+                if (USE_BLOOM) {
+                    if (ORACLE_BLOOM) {
+                        oracle_bloom.insert(pc); // oracle implementation
+                    }
+                    else {
+                    // if(!bloom1.possiblyContains(pc) || !bloom2.possiblyContains(pc)){
+                        if (!bloom1.possiblyContains(pc) && epoch % 2 == 0)
+                        {
+                            num_unique_elements_epoch++;
+                            bloom1.insert(pc);
+                        }
+                    }
                 }
-                #endif
             }
 
 			correlator.update(taken, pred_dir, uniq(seq_no, piece));
 
-            #ifdef ORACLE_BLOOM
-            if (oracle_bloom.count(pc))
-            #else
-			if (bloom1.possiblyContains(pc) /* || bloom2.possiblyContains(pc))*/ /* || cbp2016_tage_sc_l.HitBank > 0*/)
-            #endif
-            {
-				cbp2025_RUNLTS.update(seq_no, piece, pc, _resolve_dir, pred_dir, _next_pc);
-            }
-            else
-            {
-                cbp2025_RUNLTS.kill_checkpoint(seq_no, piece);
+            if (USE_BLOOM) {
+                if (ORACLE_BLOOM) {
+                    if (oracle_bloom.count(pc)) {
+                        cbp2025_RUNLTS.update(seq_no, piece, pc, _resolve_dir, pred_dir, _next_pc);
+                    }
+                    else {
+                        cbp2025_RUNLTS.kill_checkpoint(seq_no, piece);
+                    }
+                }
+                else {
+                    if (bloom1.possiblyContains(pc) /* || bloom2.possiblyContains(pc))*/ /* || cbp2016_tage_sc_l.HitBank > 0*/)
+                    {
+                        cbp2025_RUNLTS.update(seq_no, piece, pc, _resolve_dir, pred_dir, _next_pc);
+                    }
+                    else
+                    {
+                        cbp2025_RUNLTS.kill_checkpoint(seq_no, piece);
+                    }
+                }
             }
 			/*-----------------------------------------------*/
 
@@ -389,5 +437,24 @@ void endCondDirPredictor()
     printf("RUNLTS coverage: %.4g%%\n", runlts_coverage);
     double runlts_accuracy = 100.0 * static_cast<double>(used_runlts_right) / (pred_from_runlts);
     printf("RUNLTS accuracy: %.4g%%\n", runlts_accuracy);
+
+    // FIRST TIME STATS
+    printf("UNIQUE PCS: %lu\n", unique_pcs);
+    printf("FIRST TIME RIGHT: %lu\n", first_time_right);
+    printf("FIRST TIME WRONG: %lu\n", first_time_wrong);
+    double first_time_accuracy = 100.0 * static_cast<double>(first_time_right) / (unique_pcs);
+    printf("FIRST TIME accuracy: %.4g%%\n", first_time_accuracy);
+    printf("CSC FIRST TIME RIGHT: %lu\n", csc_first_time_right);
+    printf("CSC FIRST TIME WRONG: %lu\n", csc_first_time_wrong);
+    double csc_first_time_coverage = 100.0 * static_cast<double>(csc_first_time_right + csc_first_time_wrong) / (unique_pcs);
+    printf("CSC FIRST TIME coverage: %.4g%%\n", csc_first_time_coverage);
+    double csc_first_time_accuracy = 100.0 * static_cast<double>(csc_first_time_right) / (csc_first_time_right + csc_first_time_wrong);
+    printf("CSC FIRST TIME accuracy: %.4g%%\n", csc_first_time_accuracy);
+    printf("RUNLTS FIRST TIME RIGHT: %lu\n", runlts_first_time_right);
+    printf("RUNLTS FIRST TIME WRONG: %lu\n", runlts_first_time_wrong);
+    double runlts_first_time_coverage = 100.0 * static_cast<double>(runlts_first_time_right + runlts_first_time_wrong) / (unique_pcs);
+    printf("RUNLTS FIRST TIME coverage: %.4g%%\n", runlts_first_time_coverage);
+    double runlts_first_time_accuracy = 100.0 * static_cast<double>(runlts_first_time_right) / (runlts_first_time_right + runlts_first_time_wrong);
+    printf("RUNLTS FIRST TIME accuracy: %.4g%%\n", runlts_first_time_accuracy);
     std::fflush(stdout);
 }

@@ -13,7 +13,6 @@
 #include <stdlib.h>
 #include "lib/spdlog/fmt/bundled/format.h"
 #include <cmath>
-#include "csc_knobs.h"
 
 
 struct Feature {
@@ -116,7 +115,7 @@ public:
 		size_t sum = 0;
 		for (int table_idx = 0; table_idx < features.size(); table_idx++) {
 			if (mask[table_idx])
-				sum += features[table_idx++].size();
+				sum += features[table_idx].size();
 		}
 		return sum;
     }
@@ -136,7 +135,7 @@ public:
 			f.featureName = names[i++];
 		}
 
-        printf("CSC TABLE SIZE: %lu", size());
+        printf("CSC TABLE SIZE: %f (%lu bits)\n", static_cast<double>(size())/8192, size());
 	}
 
 	bool pred(std::vector<Feature::Tag> tags, uint64_t unique_id) noexcept

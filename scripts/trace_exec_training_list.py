@@ -68,7 +68,13 @@ CUSTOM_METRICS = [
     'CSC coverage',
     'CSC accuracy',
     'RUNLTS coverage',
-    'RUNLTS accuracy'
+    'RUNLTS accuracy',
+    'UNIQUE PCS',
+    'FIRST TIME accuracy',
+    'CSC FIRST TIME coverage',
+    'CSC FIRST TIME accuracy',
+    'RUNLTS FIRST TIME coverage',
+    'RUNLTS FIRST TIME accuracy'
 ]
 
 METRIC_KEYS = BASE_METRIC_KEYS + CUSTOM_METRICS

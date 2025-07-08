@@ -141,13 +141,13 @@ std::array<RegFileStateEntry, 65> RegFileState = {};
 
 static constexpr int LogMaxNewlyCounters = 16;
 
-static constexpr int NHIST = 23;
+static constexpr int NHIST = 7;
 static constexpr double HistRate = 1.19;
 static constexpr int Born2 = 18;
 static constexpr int MINHIST = 6;
 
 using UINT64 = uint64_t;
-#define SC
+//#define SC
 
 #define ASSERT_EQ(a, b)                                                                                            \
     if (a != b) {                                                                                                  \
@@ -623,19 +623,19 @@ public:
     }
 };
 
-#define NBANKLOW 9 // number of banks in the shared bank-interleaved for the low history lengths
-#define NBANKHIGH 25 // number of banks in the shared bank-interleaved for the  history lengths
+#define NBANKLOW 0 // number of banks in the shared bank-interleaved for the low history lengths
+#define NBANKHIGH 7 // number of banks in the shared bank-interleaved for the  history lengths
 
 int SizeTable[NHIST + 1];
 
-#define BORN 5 // below BORN in the table for low history lengths, >= BORN in the table for high history lengths,
+#define BORN 1 // below BORN in the table for low history lengths, >= BORN in the table for high history lengths,
 
-#define LOGG 11 /* logsize of the  banks in the  tagged TAGE tables */
-#define TBITS 9 // minimum width of the tags  (low history lengths), +4 for high history lengths
+#define LOGG 12 /* logsize of the  banks in the  tagged TAGE tables */
+#define TBITS 8 // minimum width of the tags  (low history lengths), +4 for high history lengths
 
 #define NNN 2 // number of extra entries allocated on a TAGE misprediction (1+NNN)
 #define HYSTSHIFT 2 // bimodal hysteresis shared by 4 entries
-#define LOGB 17 // log of number of entries in bimodal predictor
+#define LOGB 16 // log of number of entries in bimodal predictor
 
 std::array<int8_t, 1ull << LOGB> bim_pred;
 std::array<int8_t, 1ull << LOGB - HYSTSHIFT> bim_hyst;
@@ -761,7 +761,7 @@ void print_predictorsize()
     int STORAGESIZE = 0;
 
     int bim = (1 << LOGB) + (1 << (LOGB - HYSTSHIFT));
-    printf("(BIM %d) ", bim);
+    printf("(BIM %d)\n", bim);
     STORAGESIZE += bim;
 
     int tagged = 0;
@@ -775,7 +775,7 @@ void print_predictorsize()
 
     tagged += LogMaxNewlyCounters * 2; // Allocation throttling counters (NewlyDecay and NewlyUseful)
 
-    printf("(Tagged %d) ", tagged);
+    printf("(Tagged %d)\n", tagged);
     STORAGESIZE += tagged;
 
     int inter = 0;
@@ -806,7 +806,7 @@ void print_predictorsize()
     inter += sBrIMLI::LogSize; // BrIMLI
     inter += sTaIMLI::LogSize; // TaIMLI
 
-    printf("(TraditionalSC %d) ", inter);
+    printf("(TraditionalSC %d)\n", inter);
 
     inter += 2 * CONFWIDTH; // the 2 counters in the choser
 
@@ -814,11 +814,11 @@ void print_predictorsize()
     inter += WR.storage_size();
     inter += 65 * (1 + 14 + 8); // valid(1bit) + union{last_write_instr_id, hashed_value}(14bit), ctr(8bit)
 
-    printf("(TotalSC %d) ", inter);
+    printf("(TotalSC %d)\n", inter);
     STORAGESIZE += inter;
 #endif
 
-    printf("\nStorageSizeKiB = %f (%d bits)", STORAGESIZE / 8192., STORAGESIZE);
+    printf("\nStorageSizeKiB = %f (%d bits)\n", STORAGESIZE / 8192., STORAGESIZE);
 }
 
 struct PredRelatedVariables {
@@ -1124,7 +1124,8 @@ public:
 
         // Low Bank
         {
-            int T = (PC >> 2 ^ (hist_to_use.phist & ((1 << m[1]) - 1))) % NBANKLOW;
+            int T = 1; // FIXME: FILLER
+            //int T = (PC >> 2 ^ (hist_to_use.phist & ((1 << m[1]) - 1))) % NBANKLOW;
             for (int i = 1; i <= BORN - 1; i++) {
                 pv.GI[i] += (T << LOGG);
                 T = (T + 1) % NBANKLOW;

@@ -54,6 +54,12 @@ def parse_metrics(op_file):
             add_metric_if_found(metrics, "RUNLTS coverage", line)
             add_metric_if_found(metrics, "CSC accuracy", line)
             add_metric_if_found(metrics, "RUNLTS accuracy", line)
+            add_metric_if_found(metrics, "CSC FIRST TIME coverage", line)
+            add_metric_if_found(metrics, "RUNLTS FIRST TIME coverage", line)
+            add_metric_if_found(metrics, "CSC FIRST TIME accuracy", line)
+            add_metric_if_found(metrics, "RUNLTS FIRST TIME accuracy", line)
+            add_metric_if_found(metrics, "FIRST TIME accuracy", line)
+            add_metric_if_found(metrics, "UNIQUE PCS", line)
 
             if(not process_50perc_section and _50perc_section_header in line):
                 process_50perc_section = True

@@ -1,15 +1,20 @@
 #ifndef __CSC_KNOBS_H__
 #define __CSC_KNOBS_H__
 // CSC KNOBS
-#define LOGFT 12 
+#define LOGFT 8 
 #define TCB 9 
-#define BLS 174745
+#define BLS 16384 
 #define BLB 2
-#define LOGWS 12 
+#define BCLEAR 5000
+#define LOGWS 10 
 #define CSC_USE_THETA false
-#define ORACLE_BLOOM
 #define CSC_CTR_MAX ((1 << LOGWS - 1) - 1)
-//#define USE_BLOOM
+
+#define USE_BLOOM true 
+#define ORACLE_BLOOM true 
+#define USE_CSC_STRENGTH false 
+#define USE_CSC_SHUTOFF_CTR false 
+
 #define USE_CSC true
 
 //#define BLOOM_SIZE_INDIV 40960
