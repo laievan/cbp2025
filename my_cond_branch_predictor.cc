@@ -623,15 +623,16 @@ public:
     }
 };
 
-#define NBANKLOW 0 // number of banks in the shared bank-interleaved for the low history lengths
-#define NBANKHIGH 7 // number of banks in the shared bank-interleaved for the  history lengths
+#define NBANKLOW 4 // number of banks in the shared bank-interleaved for the low history lengths
+#define NBANKHIGH 3 // number of banks in the shared bank-interleaved for the  history lengths
 
 int SizeTable[NHIST + 1];
 
-#define BORN 1 // below BORN in the table for low history lengths, >= BORN in the table for high history lengths,
+#define BORN 5 // below BORN in the table for low history lengths, >= BORN in the table for high history lengths,
 
-#define LOGG 12 /* logsize of the  banks in the  tagged TAGE tables */
-#define TBITS 8 // minimum width of the tags  (low history lengths), +4 for high history lengths
+#define LOGG_LOW 12 /* logsize of the  banks in the  tagged TAGE tables */
+#define LOGG_HIGH 11 /* logsize of the  banks in the  tagged TAGE tables */
+#define TBITS 12 // minimum width of the tags  (low history lengths), +4 for high history lengths
 
 #define NNN 2 // number of extra entries allocated on a TAGE misprediction (1+NNN)
 #define HYSTSHIFT 2 // bimodal hysteresis shared by 4 entries
@@ -741,6 +742,8 @@ struct cbp_hist_t {
     uint64_t last_backward_pc = 0;
     uint64_t BrIMLI = 0;
     uint64_t TaIMLI = 0;
+
+    bool csc_used = false;
 
     uint64_t& local1_hist(uint64_t PC) { return L_shist.at(sLocal1::get_index(PC)); }
     uint64_t& local2_hist(uint64_t PC) { return S_slhist.at(sLocal2::get_index(PC)); }
@@ -917,16 +920,20 @@ public:
             double rate = std::max(HistRate, HistRate + 0.1 * (i - Born2));
             m[i] = CalcNextHistLen(m[i - 2], m[i - 1], rate);
         }
-        for (int i = 1; i <= NHIST; i++) {
-            TB[i] = TBITS + 4 * (i >= BORN);
-            logg[i] = LOGG;
+        for (int i = 1; i < BORN; i++) {
+            TB[i] = TBITS;
+            logg[i] = LOGG_LOW;
+        }
+        for (int i = BORN; i <= NHIST; i++) {
+            TB[i] = TBITS;
+            logg[i] = LOGG_HIGH;
         }
 
-        gtable[1] = new gentry[NBANKLOW * (1 << LOGG)];
-        SizeTable[1] = NBANKLOW * (1 << LOGG);
+        gtable[1] = new gentry[NBANKLOW * (1 << LOGG_LOW)];
+        SizeTable[1] = NBANKLOW * (1 << LOGG_LOW);
 
-        gtable[BORN] = new gentry[NBANKHIGH * (1 << LOGG)];
-        SizeTable[BORN] = NBANKHIGH * (1 << LOGG);
+        gtable[BORN] = new gentry[NBANKHIGH * (1 << LOGG_HIGH)];
+        SizeTable[BORN] = NBANKHIGH * (1 << LOGG_HIGH);
 
         for (int i = BORN + 1; i <= NHIST; i++)
             gtable[i] = gtable[BORN];
@@ -1117,17 +1124,17 @@ public:
             // We can use only m[BORN] bits for bank shuffling entropy
             int T = (PC >> 2 ^ (hist_to_use.phist & ((1ull << m[BORN]) - 1))) % NBANKHIGH;
             for (int i = BORN; i <= NHIST; i++) {
-                pv.GI[i] += (T << LOGG);
+                pv.GI[i] += (T << LOGG_HIGH);
                 T = (T + 1) % NBANKHIGH; // Adjoining bank
             }
         }
 
         // Low Bank
         {
-            int T = 1; // FIXME: FILLER
-            //int T = (PC >> 2 ^ (hist_to_use.phist & ((1 << m[1]) - 1))) % NBANKLOW;
+            //int T = 1; // FIXME: FILLER
+            int T = (PC >> 2 ^ (hist_to_use.phist & ((1 << m[1]) - 1))) % NBANKLOW;
             for (int i = 1; i <= BORN - 1; i++) {
-                pv.GI[i] += (T << LOGG);
+                pv.GI[i] += (T << LOGG_LOW);
                 T = (T + 1) % NBANKLOW;
             }
         }

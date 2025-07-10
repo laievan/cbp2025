@@ -3,7 +3,7 @@
 // CSC KNOBS
 #define LOGFT 8 
 #define TCB 9 
-#define BLS 16384 
+#define BLS 17408 
 #define BLB 2
 #define BCLEAR 5000
 #define LOGWS 10 

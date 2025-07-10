@@ -22,6 +22,8 @@
 #include <cassert>
 
 uint8_t use_csc_shutoff_ctr = (1 << 3) - 1; // counter to stop csc if it's bad
+uint64_t use_csc_thresh = CSC_CTR_MAX * (knobs.size() - 1);
+std::unordered_map<uint64_t, bool> used_csc_checkpoint; // key = seq_no, value = csc_strength
 
 //
 // beginCondDirPredictor()
@@ -93,7 +95,6 @@ bool get_cond_dir_prediction(uint64_t seq_no, uint8_t piece, uint64_t pc, const 
     knobs[LongBrsInLast1K] = last_1K_longbrs.size();
 
     const bool csc_pred = correlator.pred(knobs, uniq(seq_no, piece));
-    uint64_t use_csc_thresh = CSC_CTR_MAX * (knobs.size() - 1);
     int64_t csc_raw_pred = correlator.raw_pred(knobs, uniq(seq_no, piece));
     uint64_t csc_strength = static_cast<uint64_t>(std::llabs(csc_raw_pred));
     const bool off_strength_use_csc = csc_strength >= use_csc_thresh;
@@ -103,8 +104,10 @@ bool get_cond_dir_prediction(uint64_t seq_no, uint8_t piece, uint64_t pc, const 
     bool pick_csc = false;
 
     bool shutoff = false;
-    if (USE_CSC_SHUTOFF_CTR && !(use_csc_shutoff_ctr > 0)) {
-        shutoff = true;
+    if (USE_CSC_SHUTOFF_CTR) {
+        if (!(use_csc_shutoff_ctr > 0)) {
+            shutoff = true;
+        }
         pick_csc = false;
     }
 
@@ -121,6 +124,8 @@ bool get_cond_dir_prediction(uint64_t seq_no, uint8_t piece, uint64_t pc, const 
             pick_csc = off_strength_use_csc;
         }
     }
+
+    used_csc_checkpoint[seq_no] = pick_csc;
 
     if (pick_csc)
     {
@@ -379,26 +384,24 @@ void notify_instr_execute_resolve(uint64_t seq_no, uint8_t piece, uint64_t pc, c
 
 			correlator.update(taken, pred_dir, uniq(seq_no, piece));
 
-            if (USE_BLOOM) {
-                if (ORACLE_BLOOM) {
-                    if (oracle_bloom.count(pc)) {
-                        cbp2025_RUNLTS.update(seq_no, piece, pc, _resolve_dir, pred_dir, _next_pc);
-                    }
-                    else {
-                        cbp2025_RUNLTS.kill_checkpoint(seq_no, piece);
-                    }
-                }
-                else {
-                    if (bloom1.possiblyContains(pc) /* || bloom2.possiblyContains(pc))*/ /* || cbp2016_tage_sc_l.HitBank > 0*/)
-                    {
-                        cbp2025_RUNLTS.update(seq_no, piece, pc, _resolve_dir, pred_dir, _next_pc);
-                    }
-                    else
-                    {
-                        cbp2025_RUNLTS.kill_checkpoint(seq_no, piece);
-                    }
-                }
+            bool update_runlts = false;
+
+            if (misp) {
+                update_runlts = true;
             }
+            else {
+                bool used_csc = used_csc_checkpoint[seq_no];
+                used_csc_checkpoint.erase(seq_no);
+                update_runlts = !used_csc;
+            }
+
+            if (update_runlts) {
+                cbp2025_RUNLTS.update(seq_no, piece, pc, _resolve_dir, pred_dir, _next_pc);
+            }
+            else {
+                cbp2025_RUNLTS.kill_checkpoint(seq_no, piece);
+            }
+                
 			/*-----------------------------------------------*/
 
         } else {

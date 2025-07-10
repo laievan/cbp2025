@@ -136,6 +136,8 @@ public:
 		}
 
         printf("CSC TABLE SIZE: %f (%lu bits)\n", static_cast<double>(size())/8192, size());
+        printf("BLOOM FILTER SIZE: %f (%u bits)\n", static_cast<double>(BLS)/8192, BLS);
+        printf("TOTAL CSC SIZE: %f (%zu bits)\n", static_cast<double>(BLS + size())/8192, BLS + size());
 	}
 
 	bool pred(std::vector<Feature::Tag> tags, uint64_t unique_id) noexcept

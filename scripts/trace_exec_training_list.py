@@ -257,6 +257,8 @@ if __name__ == '__main__':
                 # Remove '%' and convert to float, then calculate mean
                 custom_metric_overall_agg = df[display_key].astype(str).str.replace('%', '', regex=False).astype(float).mean()
                 print(f'{display_key} AMean (Percentage) : {custom_metric_overall_agg}')
+                custom_metric_overall_max = df[display_key].astype(str).str.replace('%', '', regex=False).astype(float).max()
+                print(f'{display_key} Max (Percentage) : {custom_metric_overall_max}')
             else:
                 # Otherwise, calculate sum
                 custom_metric_overall_agg = df[display_key].astype(float).sum()
