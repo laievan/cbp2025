@@ -1,20 +1,11 @@
 # metric_parser.py
 import re
 
-def extract_metric_value(metric_name, line):
-    """
-    Searches for 'metric_name: val' in the line and returns 'val'.
-    'val' is everything after ': ' to the end of the line (stripped).
-    Returns None if the metric name is not found in the line or the format doesn't match.
-    """
-    # First, a quick check to see if the metric_name string is present in the line
-    if metric_name not in line:
-        return None
-
-    pattern = rf'{re.escape(metric_name)}: (.*)'
+def extract_metric_value(metric_key, line):
+    pattern = rf"^{re.escape(metric_key)}\s*:\s*([^\s]+)"
     match = re.search(pattern, line)
     if match:
-        return match.group(1).strip()
+        return match.group(1)
     return None
 
 def add_metric_if_found(metrics_dict, metric_key, line_to_search):
