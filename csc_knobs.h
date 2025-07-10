@@ -3,15 +3,15 @@
 // CSC KNOBS
 #define LOGFT 8 
 #define TCB 9 
-#define BLS 17408 
+#define BLS 23552 
 #define BLB 2
-#define BCLEAR 5000
+#define BCLEAR 14000
 #define LOGWS 10 
 #define CSC_USE_THETA false
 #define CSC_CTR_MAX ((1 << LOGWS - 1) - 1)
 
 #define USE_BLOOM true 
-#define ORACLE_BLOOM true 
+#define ORACLE_BLOOM false 
 #define USE_CSC_STRENGTH false 
 #define USE_CSC_SHUTOFF_CTR false 
 

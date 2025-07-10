@@ -632,7 +632,7 @@ int SizeTable[NHIST + 1];
 
 #define LOGG_LOW 12 /* logsize of the  banks in the  tagged TAGE tables */
 #define LOGG_HIGH 11 /* logsize of the  banks in the  tagged TAGE tables */
-#define TBITS 12 // minimum width of the tags  (low history lengths), +4 for high history lengths
+#define TBITS 10 // minimum width of the tags  (low history lengths), +4 for high history lengths
 
 #define NNN 2 // number of extra entries allocated on a TAGE misprediction (1+NNN)
 #define HYSTSHIFT 2 // bimodal hysteresis shared by 4 entries
@@ -925,7 +925,7 @@ public:
             logg[i] = LOGG_LOW;
         }
         for (int i = BORN; i <= NHIST; i++) {
-            TB[i] = TBITS;
+            TB[i] = TBITS+1;
             logg[i] = LOGG_HIGH;
         }
 
